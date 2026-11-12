@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Monitoreo de incendios | Galpón Bariloche</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,400..800&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root {
+    --paper: #ECEFF2;
+    --surface: #FFFFFF;
+    --ink: #1D2733;
+    --muted: #5D6977;
+    --line: #D3D9DF;
+    --grid: #E4E8EC;
+
+    --ok: #2E7D4F;      --ok-soft: #E2F0E7;
+    --warn: #B07800;    --warn-soft: #FBF0D4;
+    --alert: #C62828;   --alert-soft: #FBE3E1;  --alert-strong: #B71C1C;
+    --off: #7E8893;     --off-soft: #E8EBEE;
+
+    --s1: #3B6EA8;  --s2: #7A5BA6;  --s3: #2A8C8C;
+
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --paper: #12171D;
+      --surface: #1A2129;
+      --ink: #E4E9EE;
+      --muted: #97A3AF;
+      --line: #2C3641;
+      --grid: #232C35;
+
+      --ok: #4CB87A;      --ok-soft: #16301F;
+      --warn: #E3A82B;    --warn-soft: #362A10;
+      --alert: #F0625C;   --alert-soft: #3C1A1A;  --alert-strong: #A92420;
+      --off: #8E99A4;     --off-soft: #232B33;
+
+      --s1: #6E9BD1;  --s2: #A88BD3;  --s3: #4DB6B0;
+
+      color-scheme: dark;
+    }
+  }
+
+  /* Cada estado define su color con dos variables locales */
+  [data-clase="ok"]    { --c: var(--ok);    --cs: var(--ok-soft); }
+  [data-clase="warn"]  { --c: var(--warn);  --cs: var(--warn-soft); }
+  [data-clase="alert"] { --c: var(--alert); --cs: var(--alert-soft); }
+  [data-clase="off"]   { --c: var(--off);   --cs: var(--off-soft); }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--paper);
+    color: var(--ink);
+    font-family: "Archivo", "Segoe UI", system-ui, sans-serif;
+    font-size: 15px;
+    line-height: 1.5;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .pagina { max-width: 1280px; margin: 0 auto; padding: 28px 24px 48px; }
+
+  /* ---------- Cabecera ---------- */
+  .cabecera {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: flex-end;
+    gap: 16px 40px;
+    padding-bottom: 20px;
+    border-bottom: 1px solid var(--line);
+  }
+  h1 {
+    font-size: 1.75rem;
+    font-weight: 750;
+    font-stretch: 88%;
+    letter-spacing: -0.01em;
+    line-height: 1.15;
+  }
+  .sub { color: var(--muted); margin-top: 2px; }
+
+  .cabecera-datos { display: flex; flex-wrap: wrap; gap: 12px 36px; }
+  .cabecera-datos dt { font-size: 0.8rem; color: var(--muted); }
+  .cabecera-datos dd { font-size: 1.05rem; font-weight: 600; }
+  .cabecera-datos .nota { font-size: 0.8rem; font-weight: 400; color: var(--muted); }
+
+  /* ---------- Banda de estado general ---------- */
+  .banda {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    margin: 24px 0;
+    padding: 20px 24px;
+    background: var(--cs);
+    border-left: 8px solid var(--c);
+    border-radius: 4px;
+  }
+  .banda-titulo {
+    font-size: clamp(1.5rem, 1.1rem + 1.6vw, 2.25rem);
+    font-weight: 780;
+    font-stretch: 78%;
+    line-height: 1.1;
+  }
+  .banda-detalle { margin-top: 4px; max-width: 75ch; }
+  .banda[data-clase="alert"] { background: var(--alert-strong); border-left-color: var(--alert-strong); color: #FFFFFF; }
+  .banda[data-clase="alert"] .forma { background: #FFFFFF; }
+  .banda .forma { width: 30px; height: 30px; flex: none; }
+
+  /* Forma por estado: el estado no depende solo del color */
+  .forma { display: inline-block; width: 12px; height: 12px; background: var(--c); flex: none; }
+  [data-clase="ok"] .forma    { border-radius: 50%; }
+  [data-clase="warn"] .forma  { clip-path: polygon(50% 4%, 98% 94%, 2% 94%); }
+  [data-clase="alert"] .forma { clip-path: polygon(30% 0, 70% 0, 100% 30%, 100% 70%, 70% 100%, 30% 100%, 0 70%, 0 30%); }
+  [data-clase="off"] .forma   { height: 4px; border-radius: 2px; }
+  .banda[data-clase="off"] .forma { height: 8px; }
+
+  /* ---------- Paneles ---------- */
+  .fila { display: grid; gap: 20px; margin-bottom: 20px; }
+  .fila-principal { grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); }
+  .fila-graficos { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+
+  .panel {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 6px;
+    padding: 20px;
+  }
+  .panel-cab { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 12px; margin-bottom: 14px; }
+  h2 { font-size: 1.05rem; font-weight: 680; }
+  .panel-cab p { font-size: 0.85rem; color: var(--muted); }
+
+  /* ---------- Plano ---------- */
+  .plano-scroll { overflow-x: auto; }
+  #plano { display: block; width: 100%; min-width: 560px; height: auto; }
+  #plano .grilla line { stroke: var(--grid); stroke-width: 1; }
+  #plano .eje { fill: var(--muted); font-size: 11px; font-family: inherit; }
+  #plano .galpon { fill: none; stroke: var(--ink); stroke-width: 2.5; }
+  #plano .cobertura { fill: var(--c); fill-opacity: 0.08; stroke: var(--c); stroke-opacity: 0.5; stroke-dasharray: 4 4; }
+  #plano .punto { fill: var(--c); stroke: var(--surface); stroke-width: 3; }
+  #plano .pulso { fill: none; stroke: var(--c); stroke-width: 2; opacity: 0; transform-box: fill-box; transform-origin: center; }
+  #plano [data-clase="alert"] .pulso { animation: pulso 1.6s ease-out infinite; }
+  #plano .nodo-id { fill: var(--ink); font-size: 13px; font-weight: 700; text-anchor: middle; font-family: inherit; }
+  @keyframes pulso {
+    from { transform: scale(1); opacity: 0.9; }
+    to   { transform: scale(2.8); opacity: 0; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    #plano [data-clase="alert"] .pulso { animation: none; opacity: 0.8; transform: scale(1.8); }
+  }
+
+  .leyenda { list-style: none; display: flex; flex-wrap: wrap; gap: 8px 22px; margin-top: 14px; font-size: 0.9rem; }
+  .leyenda li { display: flex; align-items: center; gap: 8px; }
+  .nota-umbral { margin-top: 8px; font-size: 0.85rem; color: var(--muted); }
+
+  /* ---------- Sensores ---------- */
+  .sensores { list-style: none; display: grid; gap: 12px; }
+  .sensor { border: 1px solid var(--line); border-left: 5px solid var(--c); border-radius: 4px; padding: 12px 14px; }
+  .sensor-cab { display: flex; justify-content: space-between; align-items: center; }
+  .sensor-id { display: flex; align-items: center; gap: 8px; font-weight: 750; font-size: 1.1rem; }
+  .marca { width: 10px; height: 3px; border-radius: 2px; }
+  .chip { display: inline-flex; align-items: center; gap: 6px; padding: 2px 10px; border-radius: 999px; background: var(--cs); font-size: 0.85rem; font-weight: 650; }
+  .sensor-datos { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; margin-top: 10px; }
+  .sensor-datos dt { font-size: 0.78rem; color: var(--muted); }
+  .sensor-datos dd { font-size: 1.05rem; font-weight: 620; }
+  .sensor-pie { margin-top: 8px; font-size: 0.8rem; color: var(--muted); }
+  .vacio { color: var(--muted); }
+
+  /* ---------- Gráficos ---------- */
+  .grafico { position: relative; height: 260px; }
+
+  /* ---------- Registro ---------- */
+  .tabla-scroll { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.92rem; }
+  th { text-align: left; font-weight: 600; font-size: 0.8rem; color: var(--muted); padding: 0 12px 8px 0; border-bottom: 1px solid var(--line); white-space: nowrap; }
+  td { padding: 8px 12px 8px 0; border-bottom: 1px solid var(--grid); white-space: nowrap; }
+  td.num, th.num { text-align: right; }
+  tr:last-child td { border-bottom: none; }
+  td .chip { font-size: 0.8rem; }
+
+  @media (max-width: 960px) {
+    .fila-principal, .fila-graficos { grid-template-columns: minmax(0, 1fr); }
+  }
+  @media (max-width: 560px) {
+    .pagina { padding: 20px 14px 40px; }
+    .banda { padding: 16px; gap: 14px; }
+    .sensor-datos { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<div class="pagina">
+
+  <header class="cabecera">
+    <div>
+      <h1>Monitoreo de incendios</h1>
+      <p class="sub" id="sub-galpon">Galpón en San Carlos de Bariloche</p>
+    </div>
+    <dl class="cabecera-datos">
+      <div>
+        <dt>Referencia SMN Bariloche</dt>
+        <dd id="ref-smn">Sin datos</dd>
+        <dd class="nota" id="ref-obs"></dd>
+      </div>
+      <div>
+        <dt>Ubicación</dt>
+        <dd id="coords">Sin datos</dd>
+      </div>
+      <div>
+        <dt>Conexión</dt>
+        <dd id="actualizado">Conectando</dd>
+      </div>
+    </dl>
+  </header>
+
+  <section class="banda" id="banda" data-clase="off" aria-live="polite">
+    <span class="forma" aria-hidden="true"></span>
+    <div>
+      <p class="banda-titulo" id="banda-titulo">Conectando con el servidor</p>
+      <p class="banda-detalle" id="banda-detalle">Esperando la primera respuesta de /api/datos.</p>
+    </div>
+  </section>
+
+  <div class="fila fila-principal">
+    <section class="panel">
+      <div class="panel-cab">
+        <h2>Plano del galpón</h2>
+        <p id="plano-escala">Escala en metros</p>
+      </div>
+      <div class="plano-scroll"><svg id="plano" role="img" aria-label="Plano del galpón con la posición y el estado de cada sensor"></svg></div>
+      <ul class="leyenda">
+        <li data-clase="ok"><span class="forma"></span>Normal</li>
+        <li data-clase="warn"><span class="forma"></span>Precaución: un umbral superado</li>
+        <li data-clase="alert"><span class="forma"></span>Alerta: ambos umbrales superados</li>
+        <li data-clase="off"><span class="forma"></span>Sin datos o suspendido</li>
+      </ul>
+      <p class="nota-umbral" id="nota-umbral"></p>
+    </section>
+
+    <section class="panel">
+      <div class="panel-cab">
+        <h2>Sensores</h2>
+        <p id="cant-sensores"></p>
+      </div>
+      <ul class="sensores" id="lista-sensores">
+        <li class="vacio">Todavía no llegaron lecturas.</li>
+      </ul>
+    </section>
+  </div>
+
+  <div class="fila fila-graficos">
+    <section class="panel">
+      <div class="panel-cab">
+        <h2>Temperatura</h2>
+        <p>°C, con el umbral de alerta</p>
+      </div>
+      <div class="grafico"><canvas id="grafico-temp"></canvas></div>
+    </section>
+    <section class="panel">
+      <div class="panel-cab">
+        <h2>Humo y gas</h2>
+        <p>Valor ADC, escala 0 a 1023</p>
+      </div>
+      <div class="grafico"><canvas id="grafico-humo"></canvas></div>
+    </section>
+  </div>
+
+  <section class="panel">
+    <div class="panel-cab">
+      <h2>Últimas lecturas</h2>
+      <p>Las 12 más recientes de todos los sensores</p>
+    </div>
+    <div class="tabla-scroll">
+      <table>
+        <thead>
+          <tr>
+            <th>Hora</th>
+            <th>Sensor</th>
+            <th class="num">Temperatura</th>
+            <th class="num">Humo</th>
+            <th class="num">Referencia</th>
+            <th>Estado</th>
+            <th>Validación</th>
+          </tr>
+        </thead>
+        <tbody id="tabla-registro">
+          <tr><td colspan="7" class="vacio">Todavía no llegaron lecturas.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+</div>
+
+<script>
+  // ---------- Configuración (tiene que coincidir con server.js) ----------
+  const UMBRAL_HUMO = 700;      // valor ADC
+  const MARGEN_TEMP = 5;        // °C por encima de la referencia del SMN
+  const SEG_SIN_DATOS = 90;     // en NORMAL el servidor guarda 1 lectura por minuto: 60 s + margen
+  const INTERVALO_MS = 3000;    // cada cuánto se consulta /api/datos
+
+  const ESTADOS = {
+    NORMAL:     { texto: 'Normal',           clase: 'ok' },
+    PRECAUCION: { texto: 'Precaución',       clase: 'warn' },
+    ALERTA:     { texto: 'Alerta',           clase: 'alert' },
+    SUSPENDIDO: { texto: 'Suspendido',       clase: 'off' },
+    RECHAZADO:  { texto: 'Lectura inválida', clase: 'off' },
+    SIN_DATOS:  { texto: 'Sin datos',        clase: 'off' }
+  };
+  // Orden de gravedad para elegir qué muestra la banda de arriba
+  const PRIORIDAD = ['ALERTA', 'PRECAUCION', 'SUSPENDIDO', 'RECHAZADO', 'SIN_DATOS', 'NORMAL'];
+
+  const $ = id => document.getElementById(id);
+  const nf1 = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
+  const nf4 = new Intl.NumberFormat('es-AR', { minimumFractionDigits: 4, maximumFractionDigits: 4 });
+  const fmtHora = new Intl.DateTimeFormat('es-AR', { hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23' });
+  const nfMetros = new Intl.NumberFormat('es-AR', { maximumFractionDigits: 1 });
+
+  let ultimoDato = null;
+  let ultimaRespuestaOk = null;
+  let sinConexion = false;
+  let planoClave = '';
+  let graficoTemp = null;
+  let graficoHumo = null;
+
+  // ---------- Utilidades ----------
+  const css = v => getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+
+  const esc = s => String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+  // SQLite guarda CURRENT_TIMESTAMP en UTC y sin zona ("2026-11-05 18:21:52").
+  // Se agrega la "Z" para que el navegador lo convierta bien a la hora local.
+  function parseFecha(ts) {
+    if (!ts) return null;
+    let iso = String(ts).trim().replace(' ', 'T');
+    if (!/[zZ]|[+-]\d\d:?\d\d$/.test(iso)) iso += 'Z';
+    const d = new Date(iso);
+    return isNaN(d) ? null : d;
+  }
+
+  function hace(seg) {
+    seg = Math.max(0, Math.round(seg));
+    if (seg < 60) return `hace ${seg} s`;
+    const min = Math.floor(seg / 60);
+    if (min < 60) return `hace ${min} min`;
+    return `hace ${Math.floor(min / 60)} h`;
+  }
+
+  function unirY(lista) {
+    if (lista.length <= 1) return lista.join('');
+    return lista.slice(0, -1).join(', ') + ' y ' + lista[lista.length - 1];
+  }
+
+  const fmtNum = (v, f = nf1) => (v === null || v === undefined || !isFinite(Number(v))) ? '—' : f.format(Number(v));
+
+  function colorSerie(id, i) {
+    const fijos = { N1: '--s1', N2: '--s2', N3: '--s3' };
+    return css(fijos[id] || ['--s1', '--s2', '--s3'][i % 3]);
+  }
+
+  function estadoDe(m, ahora) {
+    if (m.validacion_estado === 'SUSPENDIDO') return 'SUSPENDIDO';
+    if (m.validacion_estado === 'RECHAZADO') return 'RECHAZADO';
+    const f = parseFecha(m.timestamp);
+    if (!f || (ahora - f) / 1000 > SEG_SIN_DATOS) return 'SIN_DATOS';
+    return ESTADOS[m.estado] ? m.estado : 'NORMAL';
+  }
+
+  function motivo(m) {
+    const ref = Number(m.temp_ref);
+    const temp = Number(m.temperatura);
+    const tempAlta = isFinite(ref) && temp > ref + MARGEN_TEMP;
+    const humoAlto = Number(m.humo) > UMBRAL_HUMO;
+    if (tempAlta && humoAlto) return `temperatura ${nf1.format(temp)} °C y humo ${m.humo}, ambos sobre el umbral`;
+    if (tempAlta) return `temperatura ${nf1.format(temp - ref)} °C por encima de la referencia`;
+    if (humoAlto) return `humo en ${m.humo}, sobre el umbral de ${UMBRAL_HUMO}`;
+    return 'valores dentro del rango normal';
+  }
+
+  function agrupar(mediciones) {
+    const nodos = {};
+    for (const m of mediciones) {
+      if (!m.sensor_id) continue;
+      const id = String(m.sensor_id).toUpperCase().trim();
+      (nodos[id] = nodos[id] || []).push(m);   // vienen de la más nueva a la más vieja
+    }
+    return nodos;
+  }
+
+  // ---------- Cabecera ----------
+  function renderCabecera(data) {
+    const est = data.establecimiento;
+    if (est) {
+      const lat = Number(est.latitud), lon = Number(est.longitud);
+      $('coords').textContent =
+        `${nf4.format(Math.abs(lat))}° ${lat < 0 ? 'S' : 'N'}, ${nf4.format(Math.abs(lon))}° ${lon < 0 ? 'O' : 'E'}`;
+      $('sub-galpon').textContent =
+        `Galpón de ${fmtNum(est.ancho_m, nfMetros)} × ${fmtNum(est.largo_m, nfMetros)} m en San Carlos de Bariloche`;
+    }
+    if (data.temp_ref_smn !== null && data.temp_ref_smn !== undefined) {
+      $('ref-smn').textContent = `${fmtNum(data.temp_ref_smn)} °C`;
+      $('ref-obs').textContent = data.observado ? `Observada ${data.observado}` : '';
+    } else {
+      $('ref-smn').textContent = 'Sin datos del SMN';
+      $('ref-obs').textContent = 'Se usa la última referencia guardada';
+    }
+  }
+
+  function renderConexion() {
+    const el = $('actualizado');
+    if (!ultimaRespuestaOk) { el.textContent = sinConexion ? 'Sin conexión' : 'Conectando'; return; }
+    const seg = (Date.now() - ultimaRespuestaOk) / 1000;
+    el.textContent = sinConexion ? `Sin conexión, último dato ${hace(seg)}` : `Actualizado ${hace(seg)}`;
+  }
+
+  // ---------- Banda de estado general ----------
+  function pintarBanda(clase, titulo, detalle) {
+    $('banda').dataset.clase = clase;
+    $('banda-titulo').textContent = titulo;
+    $('banda-detalle').textContent = detalle;
+  }
+
+  function renderBanda(nodos, ahora) {
+    if (sinConexion) {
+      pintarBanda('off', 'Sin conexión con el servidor',
+        'No se pudo consultar /api/datos. Verificá que server.js esté corriendo en el puerto 5000. ' +
+        'Los valores en pantalla pueden estar desactualizados.');
+      return;
+    }
+
+    const lista = Object.keys(nodos).map(id => ({ id, m: nodos[id][0], estado: estadoDe(nodos[id][0], ahora) }));
+    if (lista.length === 0) {
+      pintarBanda('off', 'Esperando lecturas', 'El servidor responde, pero todavía no llegó ninguna medición de los sensores.');
+      return;
+    }
+
+    lista.sort((a, b) => PRIORIDAD.indexOf(a.estado) - PRIORIDAD.indexOf(b.estado));
+    const peor = lista[0].estado;
+    const afectados = lista.filter(x => x.estado === peor);
+    const ids = unirY(afectados.map(x => x.id));
+    const otros = lista.filter(x => x.estado !== peor && x.estado !== 'NORMAL');
+    const extra = otros.length
+      ? ' Además: ' + otros.map(x => `${x.id} ${ESTADOS[x.estado].texto.toLowerCase()}`).join(', ') + '.'
+      : '';
+    const detalleMotivos = afectados.map(x => `${x.id}: ${motivo(x.m)}`).join('. ') + '.';
+
+    switch (peor) {
+      case 'ALERTA':
+        pintarBanda('alert', `Alerta de incendio en ${ids}`, detalleMotivos + extra);
+        break;
+      case 'PRECAUCION':
+        pintarBanda('warn', `Precaución en ${ids}`, detalleMotivos + extra);
+        break;
+      case 'SUSPENDIDO':
+        pintarBanda('off', `${afectados.length > 1 ? 'Sensores suspendidos' : 'Sensor suspendido'}: ${ids}`,
+          'Tres lecturas inválidas seguidas. Revisá la conexión del sensor.' + extra);
+        break;
+      case 'RECHAZADO':
+        pintarBanda('off', `Lectura inválida en ${ids}`,
+          'La última lectura no se pudo interpretar. Si se repite tres veces, el sensor queda suspendido.' + extra);
+        break;
+      case 'SIN_DATOS':
+        pintarBanda('off', `Sin datos de ${ids}`,
+          `No llegan lecturas hace más de ${SEG_SIN_DATOS} s. Revisá el sensor y su conexión con la PC.` + extra);
+        break;
+      default:
+        pintarBanda('ok', 'Sin alertas',
+          lista.length === 1 ? 'El sensor registra valores normales.' : `Los ${lista.length} sensores registran valores normales.`);
+    }
+  }
+
+  // ---------- Plano a escala ----------
+  const ESCALA = 18;   // píxeles por metro
+  const MARGEN = 34;
+
+  function construirPlano(ancho, largo) {
+    const W = ancho * ESCALA + MARGEN * 2;
+    const H = largo * ESCALA + MARGEN * 2;
+    const x0 = MARGEN, y0 = MARGEN, x1 = MARGEN + ancho * ESCALA, y1 = MARGEN + largo * ESCALA;
+
+    let grilla = '';
+    for (let m = 0; m <= ancho; m += 5) {
+      const x = x0 + m * ESCALA;
+      grilla += `<line x1="${x}" y1="${y0}" x2="${x}" y2="${y1}"/>`;
+    }
+    for (let m = 0; m <= largo; m += 5) {
+      const y = y0 + m * ESCALA;
+      grilla += `<line x1="${x0}" y1="${y}" x2="${x1}" y2="${y}"/>`;
+    }
+
+    let ejes = '';
+    for (let m = 0; m <= ancho; m += 10) {
+      ejes += `<text class="eje" x="${x0 + m * ESCALA}" y="${y1 + 20}" text-anchor="middle">${m} m</text>`;
+    }
+    for (let m = 0; m <= largo; m += 10) {
+      ejes += `<text class="eje" x="${x0 - 8}" y="${y0 + m * ESCALA + 4}" text-anchor="end">${m}</text>`;
+    }
+
+    const svg = $('plano');
+    svg.setAttribute('viewBox', `0 0 ${W} ${H}`);
+    svg.innerHTML = `
+      <defs>
+        <clipPath id="recorte-galpon"><rect x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}"/></clipPath>
+      </defs>
+      <g class="grilla">${grilla}</g>
+      <g>${ejes}</g>
+      <g id="capa-cobertura" clip-path="url(#recorte-galpon)"></g>
+      <rect class="galpon" x="${x0}" y="${y0}" width="${x1 - x0}" height="${y1 - y0}" rx="2"/>
+      <g id="capa-nodos"></g>`;
+    $('plano-escala').textContent = `Galpón de ${ancho} × ${largo} m, grilla cada 5 m`;
+  }
+
+  function crearNodoSvg(id) {
+    const ns = 'http://www.w3.org/2000/svg';
+    const cob = document.createElementNS(ns, 'circle');
+    cob.setAttribute('class', 'cobertura');
+    cob.id = `cob-${id}`;
+    $('capa-cobertura').appendChild(cob);
+
+    const g = document.createElementNS(ns, 'g');
+    g.id = `nodo-${id}`;
+    g.innerHTML = `
+      <circle class="pulso" r="11"/>
+      <circle class="punto" r="11"/>
+      <text class="nodo-id" y="-18"></text>`;
+    g.querySelector('text').textContent = id;
+    $('capa-nodos').appendChild(g);
+    return g;
+  }
+
+  function renderPlano(est, nodos, ahora) {
+    const ancho = Number(est && est.ancho_m) || 40;
+    const largo = Number(est && est.largo_m) || 20;
+    const clave = `${ancho}x${largo}`;
+    if (clave !== planoClave) { construirPlano(ancho, largo); planoClave = clave; }
+
+    Object.keys(nodos).forEach(id => {
+      const m = nodos[id][0];
+      if (m.pos_x_m === null || m.pos_x_m === undefined) return;   // nodo sin posición configurada
+      const g = document.getElementById(`nodo-${id}`) || crearNodoSvg(id);
+      const cob = document.getElementById(`cob-${id}`);
+      const x = MARGEN + Number(m.pos_x_m) * ESCALA;
+      const y = MARGEN + Number(m.pos_y_m) * ESCALA;
+      const clase = ESTADOS[estadoDe(m, ahora)].clase;
+
+      g.setAttribute('transform', `translate(${x} ${y})`);
+      g.dataset.clase = clase;
+      cob.setAttribute('cx', x);
+      cob.setAttribute('cy', y);
+      cob.setAttribute('r', (Number(m.radio_cobertura_m) || 10) * ESCALA);
+      cob.dataset.clase = clase;
+    });
+  }
+
+  // ---------- Lista de sensores ----------
+  function renderSensores(nodos, ahora) {
+    const ids = Object.keys(nodos).sort();
+    $('cant-sensores').textContent = ids.length ? `${ids.length} ${ids.length === 1 ? 'sensor' : 'sensores'}` : '';
+    if (!ids.length) {
+      $('lista-sensores').innerHTML = '<li class="vacio">Todavía no llegaron lecturas.</li>';
+      return;
+    }
+    $('lista-sensores').innerHTML = ids.map((id, i) => {
+      const m = nodos[id][0];
+      const cfg = ESTADOS[estadoDe(m, ahora)];
+      const f = parseFecha(m.timestamp);
+      const ref = Number(m.temp_ref);
+      const pos = (m.pos_x_m !== null && m.pos_x_m !== undefined)
+        ? `Posición (${fmtNum(m.pos_x_m, nfMetros)} m, ${fmtNum(m.pos_y_m, nfMetros)} m)` : 'Sin posición configurada';
+      return `
+        <li class="sensor" data-clase="${cfg.clase}">
+          <div class="sensor-cab">
+            <span class="sensor-id"><i class="marca" style="background:${colorSerie(id, i)}"></i>${esc(id)}</span>
+            <span class="chip"><span class="forma"></span>${cfg.texto}</span>
+          </div>
+          <dl class="sensor-datos">
+            <div><dt>Temperatura</dt><dd>${fmtNum(m.temperatura)} °C</dd></div>
+            <div><dt>Umbral temp.</dt><dd>${isFinite(ref) ? nf1.format(ref + MARGEN_TEMP) + ' °C' : '—'}</dd></div>
+            <div><dt>Humo</dt><dd>${m.humo ?? '—'}</dd></div>
+          </dl>
+          <p class="sensor-pie">${pos}. ${f ? 'Última lectura ' + hace((ahora - f) / 1000) : 'Sin hora de lectura'}.</p>
+        </li>`;
+    }).join('');
+  }
+
+  // ---------- Gráficos ----------
+  function crearGrafico(canvas, tituloY) {
+    return new Chart(canvas, {
+      type: 'line',
+      data: { datasets: [] },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        parsing: false,
+        interaction: { mode: 'nearest', axis: 'x', intersect: false },
+        scales: {
+          x: { type: 'linear', ticks: { maxTicksLimit: 6, callback: v => fmtHora.format(new Date(v)) } },
+          y: { title: { display: true, text: tituloY } }
+        },
+        plugins: {
+          legend: { position: 'bottom', labels: { usePointStyle: true, pointStyle: 'line', boxWidth: 24 } },
+          tooltip: { callbacks: { title: items => items.length ? fmtHora.format(new Date(items[0].parsed.x)) : '' } }
+        }
+      }
+    });
+  }
+
+  function aplicarColores(grafico) {
+    const texto = css('--muted'), linea = css('--grid');
+    const o = grafico.options;
+    o.color = texto;
+    o.scales.x.ticks.color = texto;
+    o.scales.y.ticks.color = texto;
+    o.scales.y.title.color = texto;
+    o.scales.x.grid.color = linea;
+    o.scales.y.grid.color = linea;
+    o.plugins.legend.labels.color = texto;
+  }
+
+  function renderGraficos(nodos, refActual) {
+    if (typeof Chart === 'undefined') return;   // Chart.js no cargó (sin internet)
+    if (!graficoTemp) graficoTemp = crearGrafico($('grafico-temp'), '°C');
+    if (!graficoHumo) graficoHumo = crearGrafico($('grafico-humo'), 'Valor ADC');
+
+    const ids = Object.keys(nodos).sort();
+    let xMin = Infinity, xMax = -Infinity;
+
+    const series = campo => ids.map((id, i) => {
+      const puntos = nodos[id]
+        .map(m => ({ x: parseFecha(m.timestamp)?.getTime(), y: Number(m[campo]) }))
+        .filter(p => p.x && isFinite(p.y))
+        .reverse();
+      puntos.forEach(p => { xMin = Math.min(xMin, p.x); xMax = Math.max(xMax, p.x); });
+      const color = colorSerie(id, i);
+      return { label: id, data: puntos, borderColor: color, backgroundColor: color,
+               borderWidth: 2, pointRadius: 0, pointHoverRadius: 4, tension: 0.25 };
+    });
+
+    const serieTemp = series('temperatura');
+    const serieHumo = series('humo');
+
+    const umbral = (y, etiqueta) => (isFinite(xMin) && isFinite(y)) ? [{
+      label: etiqueta, data: [{ x: xMin, y }, { x: xMax, y }],
+      borderColor: css('--alert'), backgroundColor: css('--alert'),
+      borderDash: [6, 4], borderWidth: 1.5, pointRadius: 0, pointHoverRadius: 0
+    }] : [];
+
+    const ref = (refActual === null || refActual === undefined) ? NaN : Number(refActual);
+
+    graficoTemp.data.datasets = [...serieTemp, ...umbral(ref + MARGEN_TEMP, `Umbral (ref. SMN + ${MARGEN_TEMP} °C)`)];
+    graficoHumo.data.datasets = [...serieHumo, ...umbral(UMBRAL_HUMO, `Umbral (${UMBRAL_HUMO})`)];
+
+    [graficoTemp, graficoHumo].forEach(g => {
+      g.options.scales.x.min = isFinite(xMin) ? xMin : undefined;   // el eje X arranca y termina con los datos
+      g.options.scales.x.max = isFinite(xMax) ? xMax : undefined;
+      aplicarColores(g);
+      g.update('none');
+    });
+  }
+
+  // ---------- Registro ----------
+  function renderRegistro(mediciones) {
+    const filas = mediciones.slice(0, 12);
+    if (!filas.length) {
+      $('tabla-registro').innerHTML = '<tr><td colspan="7" class="vacio">Todavía no llegaron lecturas.</td></tr>';
+      return;
+    }
+    $('tabla-registro').innerHTML = filas.map(m => {
+      const f = parseFecha(m.timestamp);
+      const cfg = ESTADOS[m.estado] || ESTADOS.NORMAL;
+      const valida = m.validacion_estado || '—';
+      const textoValida = valida.charAt(0) + valida.slice(1).toLowerCase();
+      return `
+        <tr>
+          <td>${f ? fmtHora.format(f) : '—'}</td>
+          <td><strong>${esc(m.sensor_id ?? '—')}</strong></td>
+          <td class="num">${fmtNum(m.temperatura)} °C</td>
+          <td class="num">${m.humo ?? '—'}</td>
+          <td class="num">${fmtNum(m.temp_ref)} °C</td>
+          <td><span class="chip" data-clase="${cfg.clase}"><span class="forma"></span>${cfg.texto}</span></td>
+          <td>${esc(textoValida)}</td>
+        </tr>`;
+    }).join('');
+  }
+
+  // ---------- Ciclo principal ----------
+  function render(data) {
+    const ahora = new Date();
+    const mediciones = data.mediciones || [];
+    const nodos = agrupar(mediciones);
+    const refActual = data.temp_ref_smn ?? (mediciones[0] && mediciones[0].temp_ref);
+
+    renderCabecera(data);
+    renderBanda(nodos, ahora);
+    renderPlano(data.establecimiento, nodos, ahora);
+    renderSensores(nodos, ahora);
+    renderGraficos(nodos, refActual);
+    renderRegistro(mediciones);
+    renderConexion();
+  }
+
+  async function actualizar() {
+    try {
+      const res = await fetch('/api/datos', { cache: 'no-store' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      ultimoDato = await res.json();
+      ultimaRespuestaOk = Date.now();
+      sinConexion = false;
+    } catch (err) {
+      console.error('Error al consultar /api/datos:', err);
+      sinConexion = true;
+    }
+    if (ultimoDato) render(ultimoDato);
+    else { renderBanda({}, new Date()); renderConexion(); }
+  }
+
+  $('nota-umbral').textContent =
+    `Umbrales: temperatura mayor a la referencia del SMN + ${MARGEN_TEMP} °C y humo mayor a ${UMBRAL_HUMO} ` +
+    `(valor ADC, 0 a 1023). Los círculos punteados muestran el radio de cobertura de cada sensor.`;
+
+  actualizar();
+  setInterval(actualizar, INTERVALO_MS);
+  setInterval(renderConexion, 1000);
+
+  // Si cambia el modo claro/oscuro del sistema, se vuelven a pintar los gráficos
+  window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+    if (ultimoDato) render(ultimoDato);
+  });
+</script>
+</body>
+</html>
